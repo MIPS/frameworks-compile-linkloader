@@ -217,8 +217,12 @@ void *ELFSymbol_CRTP<Bitwidth>::getAddress(bool autoAlloc) const {
           }
           break;
 
-        case SHN_ABS:
         case SHN_UNDEF:
+#if defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
+          if (strcmp(getName(), "_gp_disp") == 0) // OK for MIPS
+            break;
+#endif
+        case SHN_ABS:
         case SHN_XINDEX:
           rsl_assert(0 && "STT_OBJECT with special st_shndx.");
           break;
