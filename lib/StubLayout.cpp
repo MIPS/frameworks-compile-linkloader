@@ -25,6 +25,8 @@
 
 #ifdef __arm__
 #define STUB_SIZE 8 // 8 bytes (2 words)
+#elif defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
+#define STUB_SIZE 16 // 16 bytes (4 words)
 #endif
 
 StubLayout::StubLayout() : table(NULL), count(0) {
@@ -36,7 +38,8 @@ void StubLayout::initStubTable(unsigned char *table_, size_t count_) {
 }
 
 void *StubLayout::allocateStub(void *addr) {
-#ifdef __arm__
+#if defined(__arm__)\
+    || defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
   if (count == 0) {
     // No free stub slot is available
     return NULL;
@@ -67,11 +70,25 @@ void StubLayout::setStubAddress(void *stub_, void *addr) {
 
   void **target = (void **)(stub + 4);
   *target = addr;
+#elif defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
+  // 0:   3c190000        lui     t9,%hi(addr)
+  // 4:   27390000        addiu   t9,t9,%lo(addr)
+  // 8:   03200008        jr      t9
+  // c:   00000000        nop
+  int *stub = (int *)stub_;
+  *stub = 0x3c190000 | ((((int)addr + 0x8000) >> 16) & 0xFFFF);
+  stub++;
+  *stub = 0x27390000 | ((int)addr & 0xFFFF);
+  stub++;
+  *stub = 0x03200008;
+  stub++;
+  *stub = 0;
 #endif
 }
 
 size_t StubLayout::calcStubTableSize(size_t count) const {
-#ifdef __arm__
+#if defined(__arm__)\
+    || defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
   return count * STUB_SIZE;
 #else
   return 0;

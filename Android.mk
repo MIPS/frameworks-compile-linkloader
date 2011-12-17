@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
   lib/ELFTypes.cpp \
   lib/MemChunk.cpp \
   lib/StubLayout.cpp \
+  lib/GOT.cpp \
   utils/raw_ostream.cpp \
   utils/rsl_assert.cpp \
   utils/helper.cpp \
@@ -67,6 +68,7 @@ LOCAL_SRC_FILES := \
   lib/ELFSymbol.cpp \
   lib/ELFSectionHeader.cpp \
   lib/ELFTypes.cpp \
+  lib/GOT.cpp \
   lib/MemChunk.cpp \
   lib/StubLayout.cpp \
   utils/raw_ostream.cpp \
@@ -110,7 +112,6 @@ LOCAL_SRC_FILES := \
 
 include $(LLVM_ROOT_PATH)/llvm-device-build.mk
 include $(BUILD_EXECUTABLE)
-
 
 #=============================================================================
 # librsloader-test (Host)

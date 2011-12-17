@@ -29,9 +29,7 @@ public:
   ELF_TYPE_INTRO_TO_TEMPLATE_SCOPE(Bitwidth);
 
 private:
-#ifdef __arm__
   StubLayout stubs;
-#endif
 
 public:
   template <typename Archiver>
@@ -39,11 +37,9 @@ public:
                                   ELFObjectTy *owner,
                                   ELFSectionHeaderTy const *sh);
 
-#ifdef __arm__
   StubLayout *getStubLayout() {
     return &stubs;
   }
-#endif
 
 private:
   template <typename Archiver>
