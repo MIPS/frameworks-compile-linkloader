@@ -34,7 +34,7 @@
 
 #elif defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
 
-# if defined(__android__)
+# if 1 //defined(__android__)
 #  include <unistd.h>
 #  include <asm/cachectl.h>
 #  define FLUSH_CPU_CACHE(BEGIN, END) \
