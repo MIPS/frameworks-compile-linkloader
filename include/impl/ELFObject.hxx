@@ -22,6 +22,7 @@
 #include "ELFSection.h"
 #include "ELFSectionHeaderTable.h"
 #include "StubLayout.h"
+#include "GOT.h"
 #include "ELF.h"
 
 #include <llvm/ADT/SmallVector.h>
@@ -178,8 +179,8 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
 
         case STT_NOTYPE:
           if (S == 0) {
-            void *ext_func = find_sym(context, sym->getName());
 #ifdef SUPPORT_NEAR_JUMP_EVEN_IF_BLc2BLX_NEEDED
+            void *ext_func = find_sym(context, sym->getName());
             S = (Inst_t)(uintptr_t)ext_func;
             sym->setAddress(ext_func);
 
@@ -367,9 +368,14 @@ relocateMIPS(void *(*find_sym)(void *context, char const *name),
     Inst_t A = (Inst_t)(uintptr_t)*inst;
     Inst_t S = (Inst_t)(uintptr_t)sym->getAddress();
 
+    bool need_stub = false;
+
     if (S == 0) {
-      S = (Inst_t)(uintptr_t)find_sym(context, sym->getName());
-      sym->setAddress((void *)S);
+      if (strcmp (sym->getName(), "_gp_disp") != 0) {
+          need_stub = true;
+          S = (Inst_t)(uintptr_t)find_sym(context, sym->getName());
+          sym->setAddress((void *)S);
+      }
     }
 
     switch (rel->getType()) {
@@ -377,26 +383,127 @@ relocateMIPS(void *(*find_sym)(void *context, char const *name),
       rsl_assert(0 && "Not implemented relocation type.");
       break;
 
-    case R_MIPS_HI16:
-      A = A & 0xFFFF;
-      *inst |= (((S + A + 0x8000) >> 16) & 0xFFFF);
+    case R_MIPS_NONE:
+    case R_MIPS_JALR: // ignore this
       break;
 
-    case R_MIPS_LO16:
+    case R_MIPS_16:
+      *inst &= 0xFFFF0000;
       A = A & 0xFFFF;
-      *inst |= ((S + A) & 0xFFFF);
-      break;
-
-    case R_MIPS_26:
-      A = A & 0x3FFFFFF;
-      // FIXME: We just support addend = 0.
-      rsl_assert(A == 0 && "R_MIPS_26 addend is not 0.");
-      *inst |= ((S >> 2) & 0x3FFFFFF);
-      rsl_assert((((P + 4) >> 28) != (S >> 28)) && "Cannot relocate R_MIPS_26 due to differences in the upper four bits.");
+      A = S + (short)A;
+      rsl_assert(A >= -32768 && A <= 32767 && "R_MIPS_16 overflow.");
+      *inst |= (A & 0xFFFF);
       break;
 
     case R_MIPS_32:
       *inst = S + A;
+      break;
+
+    case R_MIPS_26:
+      *inst &= 0xFC000000;
+      if (need_stub == false) {
+        A = (A & 0x3FFFFFF) << 2;
+        if (sym->getBindingAttribute() == STB_LOCAL) { // local binding
+          A |= ((P + 4) & 0xF0000000);
+          A += S;
+          *inst |= ((A >> 2) & 0x3FFFFFF);
+        }
+        else { // external binding
+          if (A & 0x08000000) // Sign extend from bit 27
+            A |= 0xF0000000;
+          A += S;
+          *inst |= ((A >> 2) & 0x3FFFFFF);
+          if (((P + 4) >> 28) != (A >> 28)) { // far local call
+            void *stub = text->getStubLayout()->allocateStub((void *)A);
+            rsl_assert(stub && "cannot allocate stub.");
+            sym->setAddress(stub);
+            S = (int32_t)stub;
+            *inst |= ((S >> 2) & 0x3FFFFFF);
+            rsl_assert(((P + 4) >> 28) == (S >> 28) && "stub is too far.");
+          }
+        }
+      }
+      else { // shared-library call
+        A = (A & 0x3FFFFFF) << 2;
+        rsl_assert(A == 0 && "R_MIPS_26 addend is not zero.");
+        void *stub = text->getStubLayout()->allocateStub((void *)S);
+        rsl_assert(stub && "cannot allocate stub.");
+        sym->setAddress(stub);
+        S = (int32_t)stub;
+        *inst |= ((S >> 2) & 0x3FFFFFF);
+        rsl_assert(((P + 4) >> 28) == (S >> 28) && "stub is too far.");
+      }
+      break;
+
+    case R_MIPS_HI16:
+      *inst &= 0xFFFF0000;
+      A = (A & 0xFFFF) << 16;
+      // Find the nearest LO16 relocation type after this entry
+      for (size_t j = i + 1; j < reltab->size(); j++) {
+        ELFRelocTy *this_rel = (*reltab)[j];
+        ELFSymbolTy *this_sym = (*symtab)[this_rel->getSymTabIndex()];
+        if (this_rel->getType() == R_MIPS_LO16 && this_sym == sym) {
+          Inst_t *this_inst = (Inst_t *)&(*text)[this_rel->getOffset()];
+          Inst_t this_A = (Inst_t)(uintptr_t)*this_inst;
+          this_A = this_A & 0xFFFF;
+          A += (short)this_A;
+          break;
+        }
+      }
+      if (strcmp (sym->getName(), "_gp_disp") == 0) {
+          S = (int)got_address() + GP_OFFSET - (int)P;
+          sym->setAddress((void *)S);
+      }
+      *inst |= (((S + A + (int)0x8000) >> 16) & 0xFFFF);
+      break;
+
+    case R_MIPS_LO16:
+      *inst &= 0xFFFF0000;
+      A = A & 0xFFFF;
+      if (strcmp (sym->getName(), "_gp_disp") == 0) {
+          S = (Inst_t)sym->getAddress();
+      }
+      *inst |= ((S + A) & 0xFFFF);
+      break;
+
+    case R_MIPS_GOT16:
+    case R_MIPS_CALL16:
+      {
+        *inst &= 0xFFFF0000;
+        A = A & 0xFFFF;
+        if (rel->getType() == R_MIPS_GOT16) {
+          if (sym->getBindingAttribute() == STB_LOCAL) {
+            A <<= 16;
+
+            // Find the nearest LO16 relocation type after this entry
+            for (size_t j = i + 1; j < reltab->size(); j++) {
+              ELFRelocTy *this_rel = (*reltab)[j];
+              ELFSymbolTy *this_sym = (*symtab)[this_rel->getSymTabIndex()];
+              if (this_rel->getType() == R_MIPS_LO16 && this_sym == sym) {
+                Inst_t *this_inst = (Inst_t *)&(*text)[this_rel->getOffset()];
+                Inst_t this_A = (Inst_t)(uintptr_t)*this_inst;
+                this_A = this_A & 0xFFFF;
+                A += (short)this_A;
+                break;
+              }
+            }
+          }
+          else {
+            rsl_assert(A == 0 && "R_MIPS_GOT16 addend is not 0.");
+          }
+        }
+        else { // R_MIPS_CALL16
+          rsl_assert(A == 0 && "R_MIPS_CALL16 addend is not 0.");
+        }
+        int got_index = search_got((int)rel->getSymTabIndex(), (void *)(S + A),
+                                   sym->getBindingAttribute());
+        int got_offset = (got_index << 2) - GP_OFFSET;
+        *inst |= (got_offset & 0xFFFF);
+      }
+      break;
+
+    case R_MIPS_GPREL32:
+      *inst = A + S - ((int)got_address() + GP_OFFSET);
       break;
     }
   }

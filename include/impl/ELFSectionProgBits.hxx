@@ -37,7 +37,8 @@ ELFSectionProgBits<Bitwidth>::read(Archiver &AR,
   llvm::OwningPtr<ELFSectionProgBits> result(new ELFSectionProgBits());
 
   // TODO: Not every section needs a stub.
-#ifdef __arm__
+#if defined(__arm__)\
+  || defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
   // Count the extern function symbol
   ELFSectionSymTabTy const *symtab =
     static_cast<ELFSectionSymTabTy *>(owner->getSectionByName(".symtab"));

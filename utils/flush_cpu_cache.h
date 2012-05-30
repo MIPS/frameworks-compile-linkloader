@@ -34,9 +34,16 @@
 
 #elif defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_)
 
-#include <sys/cachectl.h>
-#define FLUSH_CPU_CACHE(BEGIN, END) \
+# if 1 //defined(__android__)
+#  include <unistd.h>
+#  include <asm/cachectl.h>
+#  define FLUSH_CPU_CACHE(BEGIN, END) \
+       cacheflush((long)(BEGIN), (long)(END), BCACHE)
+# else
+#  include <sys/cachectl.h>
+#  define FLUSH_CPU_CACHE(BEGIN, END) \
   _flush_cache(reinterpret_cast<char*>(BEGIN), END-BEGIN+1, BCACHE);
+# endif
 
 #else
 
