@@ -46,9 +46,10 @@ int search_got(int symbol_index, void *addr, uint8_t bind_type)
         }
       }
       else {
-        // The value must be the same for global symbols .
-        rsl_assert (got_symbol_addresses[i] == addr
-                    && "MIPS GOT address error.");
+        // The value must be the same for global symbols.
+        if (got_symbol_addresses[i] != addr) {
+          continue;       // carry on looking for a match or allocate a new entry
+        }
         return i;
       }
     }
