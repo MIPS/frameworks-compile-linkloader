@@ -149,7 +149,8 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
       T = 1;
     }
 
-    switch (rel->getType()) {
+    word_t reltype = rel->getType();
+    switch (reltype) {
     default:
       rsl_assert(0 && "Not implemented relocation type.");
       break;
@@ -172,9 +173,11 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
       // FIXME: Predefine relocation codes.
     case R_ARM_CALL:
     case R_ARM_THM_CALL:
+    case R_ARM_JUMP24:
+    case R_ARM_THM_JUMP24:
       {
 #define SIGN_EXTEND(x, l) (((x)^(1<<((l)-1)))-(1<<(l-1)))
-        if (rel->getType() == R_ARM_CALL) {
+        if (reltype == R_ARM_CALL || reltype == R_ARM_JUMP24) {
           A = (Inst_t)(int64_t)SIGN_EXTEND(*inst & 0xFFFFFF, 24);
           A <<= 2;
         } else {
@@ -245,7 +248,7 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
         //LOGI("Function %s: using stub %p\n", sym->getName(), stub);
         S = (uint32_t)(uintptr_t)stub;
 
-        if (rel->getType() == R_ARM_CALL) {
+        if (reltype == R_ARM_CALL || reltype == R_ARM_JUMP24) {
           // Relocate the R_ARM_CALL relocation type
           uint32_t result = (S + A - P) >> 2;
 
@@ -302,13 +305,13 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
           S = (Inst_t)(uintptr_t)ext_sym;
           sym->setAddress(ext_sym);
         }
-        if (rel->getType() == R_ARM_MOVT_ABS
-            || rel->getType() == R_ARM_THM_MOVT_ABS) {
+        if (reltype == R_ARM_MOVT_ABS
+            || reltype == R_ARM_THM_MOVT_ABS) {
           S >>= 16;
         }
 
-        if (rel->getType() == R_ARM_MOVT_ABS
-            || rel->getType() == R_ARM_MOVW_ABS_NC) {
+        if (reltype == R_ARM_MOVT_ABS
+            || reltype == R_ARM_MOVW_ABS_NC) {
           // No need sign extend.
           A = ((*inst & 0xF0000) >> 4) | (*inst & 0xFFF);
           uint32_t result = (S + A);
@@ -324,7 +327,7 @@ relocateARM(void *(*find_sym)(void *context, char const *name),
                ((*inst >>  4) & 0x0700u) |
                ( *inst        & 0x00FFu));
           uint32_t result;
-          if (rel->getType() == R_ARM_THM_MOVT_ABS) {
+          if (reltype == R_ARM_THM_MOVT_ABS) {
             result = (S + A);
           } else {
             result = (S + A) | T;
